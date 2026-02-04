@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crca"
-version = "1.4.0"
-description = "CR-CA Lite — lightweight causal reasoning agent with advanced analysis suite (CR-CA)"
+version = "1.5.0"
+description = "CR-CA Wrapper for CR-CA LRM on HF (Depricated)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
