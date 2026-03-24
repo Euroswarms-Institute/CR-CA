@@ -1,6 +1,6 @@
 # AIXI — implementation plan (synthesis)
 
-**Status:** consolidated after SWA-4..SWA-9 analyses (`analyses/*.md`).  
+**Status:** consolidated after SWA-4..SWA-9; **supplementary** `modules/` specs in flight (board comment 2026-03-24).  
 **Scope:** A **computable** agent stack that composes the SWA-3 source bundle into implementable modules, explicit approximation knobs, and a research roadmap—not a claim of full Solomonoff universality.
 
 ---
@@ -134,6 +134,7 @@ aixi/
   README.md
   IMPLEMENTATION_PLAN.md
   analyses/
+  modules/               # Supplementary paper → module hooks (board addendum)
   aixi/
     env/                 # Environment protocol + toy envs
     encoding/            # Bit / token codecs
@@ -207,3 +208,29 @@ aixi/
 - [x] `analyses/04-arxiv-2502-15820.md`
 - [x] `analyses/05-arxiv-2511-22226.md`
 - [x] `analyses/06-arxiv-2505-21170.md`
+
+### Supplementary module checklist (in progress)
+
+- [ ] `modules/mod-cs-0412022.md` (+ validation notes)
+- [ ] `modules/mod-arxiv-1411-5679.md`
+- [ ] `modules/mod-arxiv-2505-14698.md`
+- [ ] `modules/mod-math-0209332.md`
+- [ ] `modules/mod-hilbert-machine.md`
+
+---
+
+## 10. Supplementary theory & modules (board addendum, 2026-03-24)
+
+Five additional references extend **priors, convergence guarantees, discounted settings, recent variants, and computability boundaries**. They are tracked as **first-class module hooks** under `aixi/modules/` (see `modules/README.md`). Each must state **implement vs cite-only**, map to **Families A/B/C**, and update the notation ledger if it introduces symbols reused in code.
+
+| Source | Module file | Intended use (to be refined by Research Engineer) |
+|--------|-------------|---------------------------------------------------|
+| [cs/0412022](https://arxiv.org/pdf/cs/0412022) | `mod-cs-0412022.md` | Foundational sequential decision / universal setting; tightens definitions for §2–§3. |
+| [1411.5679](https://arxiv.org/pdf/1411.5679) | `mod-arxiv-1411-5679.md` | Typically **discounted** or approximate-AIXI variants; align \(\gamma\) and planning horizons with §4. |
+| [2505.14698](https://arxiv.org/pdf/2505.14698) | `mod-arxiv-2505-14698.md` | Recent algorithmic or theoretical angle; explicit bridge to MC-AIXI / Self-AIXI / AIQI. |
+| [math/0209332](https://arxiv.org/pdf/math/0209332) | `mod-math-0209332.md` | Mixture / prediction convergence machinery; informs **tests** and \(\xi\) misspecification statements. |
+| [HilbertMachine.pdf](https://philsci-archive.pitt.edu/2869/1/HilbertMachine.pdf) | `mod-hilbert-machine.md` | Computability / limits narrative; feeds §8 risks and **scope boundaries** for v1. |
+
+**Process:** Research Engineer completes each module spec **first**. Math & CS Wizard fills **Validation notes** in the same file (or follow-up PR), checking consistency with §1 and flagging non-computable claims before implementation milestones.
+
+**CEO merge rule:** When all five module specs are **content-complete** and validated, fold any stable definitions into §1–§4 and close the supplementary checklist above.

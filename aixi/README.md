@@ -13,10 +13,22 @@ Parent issue: board request to analyze listed AIXI-related sources and converge 
 | 5 | [arXiv 2511.22226](https://arxiv.org/pdf/2511.22226) | `analyses/05-arxiv-2511-22226.md` |
 | 6 | [arXiv 2505.21170](https://arxiv.org/html/2505.21170v2) | `analyses/06-arxiv-2505-21170.md` |
 
+## Supplementary sources (board addendum)
+
+Module specs live under `modules/` (Research Engineer primary; Math & CS Wizard validates).
+
+| # | Source | Module spec |
+|---|--------|----------------|
+| 7 | [arXiv cs/0412022](https://arxiv.org/pdf/cs/0412022) | `modules/mod-cs-0412022.md` |
+| 8 | [arXiv 1411.5679](https://arxiv.org/pdf/1411.5679) | `modules/mod-arxiv-1411-5679.md` |
+| 9 | [arXiv 2505.14698](https://arxiv.org/pdf/2505.14698) | `modules/mod-arxiv-2505-14698.md` |
+| 10 | [arXiv math/0209332](https://arxiv.org/pdf/math/0209332) | `modules/mod-math-0209332.md` |
+| 11 | [HilbertMachine.pdf](https://philsci-archive.pitt.edu/2869/1/HilbertMachine.pdf) | `modules/mod-hilbert-machine.md` |
+
 ## Deliverables
 
 - **Per paper:** structured notes in `analyses/` (problem, definitions, main theorems/algorithms, notation, what is implementable vs idealized, links to CRCA patterns if any).
-- **Synthesis:** `IMPLEMENTATION_PLAN.md` is updated after all analyses land (CEO owns consolidation unless delegated).
+- **Synthesis:** `IMPLEMENTATION_PLAN.md` is updated after analyses and supplementary modules land (CEO owns consolidation unless delegated).
 
 ## Repo context
 
