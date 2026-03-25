@@ -1,6 +1,6 @@
 # AIXI — implementation plan (synthesis)
 
-**Status:** consolidated after SWA-4..SWA-9; **supplementary** `modules/` specs in flight (board comment 2026-03-24).  
+**Status:** consolidated after SWA-4..SWA-9; supplementary `modules/` **complete** and **folded into §1–§4** (CEO merge 2026-03-25).  
 **Scope:** A **computable** agent stack that composes the SWA-3 source bundle into implementable modules, explicit approximation knobs, and a research roadmap—not a claim of full Solomonoff universality.
 
 ---
@@ -52,6 +52,14 @@ Symbols reused across analyses—**one meaning in code**:
 - **“Model-free” (AIQI):** No explicit \(\nu\) in the **action rule**; still a **predictive model of returns**. In code, name paths `aiqi.*` vs `world_model.*` to avoid conflating with AIXI’s percept model.
 - **Self-AIXI \(Q_{\zeta\xi}\)** is **not** \(Q_\xi^\*\): comments and metrics must log `q_zeta_xi` vs `q_xi_star` separately when both are estimated.
 
+### 1.1 Runtime computability (supplementary modules)
+
+Stable boundary language shared across `aixi/modules/mod-*.md` (Potgieter, Kim, Müller, Ord, Leon)—**no new planning symbols**, but **one contract for code and docs**:
+
+- **Computable** means **standard Turing machines** with explicit **per-tick / per-call budgets**. v1 does **not** assume Zeno clocks, supertasks, “halting from an infinite run,” TM+oracle steps, or other hypercomputer semantics.
+- **`MixtureEnvModel`** (§3) implementations expose a **finite** model catalog and **`predict` / `update` / `revert`** that **terminate** under CI (and production) timeouts—operational proxies for “our \(\xi\) is not a hypercomputer.”
+- **Marketing / reviewer copy:** “Universal” priors mean **finite** \(\mathcal{M}\) (and \(\mathcal{P}\)) surrogates aligned with §8, not literal Solomonoff mixture over all computable environments confused with the hypercomputation literature.
+
 ---
 
 ## 2. Environment interface (all families)
@@ -72,6 +80,8 @@ class Environment(Protocol):
 
 **Episodic vs continuing:** Planning horizons in (A) are **search** horizons; AIQI’s \(H\) is **return truncation**—different parameters, do not overload one knob for both.
 
+**Computability:** Each `step` is a **bounded-time** procedure on ordinary hardware; environments are not a hook for idealized infinite-time TM semantics or accelerating-time schedules (see §1.1).
+
 ---
 
 ## 3. Model class & prior (\(\xi\))
@@ -80,6 +90,7 @@ class Environment(Protocol):
 
 - **CTW / variable-order Markov** over binary or tokenized interaction stream (MC-AIXI line).
 - **Interface:** `predict(e|h,a)`, `update(e)`, `revert()` for search rollback (`pyaixi` pattern).
+- **Finite catalog + bounded updates:** Index \(\mathcal{M}\) with finitely many ids; every call on the hot path must stay Turing-bounded (regression: CI timeouts on mixture update loops). This is the constructive reading of \(\xi\) in §1.1—**not** a claim of updating a literal universal semimeasure.
 
 ### 3.2 Neural or structured \(\mathcal{M}\) (stretch)
 
@@ -101,6 +112,8 @@ class Environment(Protocol):
 | Rollouts from \(\xi\) | Sample percepts from CTW; revert between MCTS iterations |
 | Search | UCT + `mc_simulations`, `horizon` |
 | Action | `search()` then env step |
+
+**Horizon semantics:** Search depth and rollout counts are **finite truncations** only; action selection does not depend on limits as \(t\to\infty\) or on infinite-step-in-finite-time idealizations (§1.1).
 
 ### 4.2 Family B — Self-AIXI
 
@@ -198,6 +211,16 @@ aixi/
 | `05-arxiv-2511-22226.md` | §0, §5 joint-model hook, §8 |
 | `06-arxiv-2505-21170.md` | §0, §3.3, §6 Phase 5, §8 |
 
+### Supplementary modules → plan
+
+| Module file | Folded into |
+|-------------|-------------|
+| `modules/mod-cs-0412022.md` | §1.1, §2, §8 |
+| `modules/mod-arxiv-1411-5679.md` | §1.1, §8 |
+| `modules/mod-arxiv-2505-14698.md` | §1.1, §8 |
+| `modules/mod-math-0209332.md` | §1.1, §3.1, §8 |
+| `modules/mod-hilbert-machine.md` | §1.1, §8 |
+
 ---
 
 ### Analysis checklist (complete)
@@ -209,13 +232,13 @@ aixi/
 - [x] `analyses/05-arxiv-2511-22226.md`
 - [x] `analyses/06-arxiv-2505-21170.md`
 
-### Supplementary module checklist (in progress)
+### Supplementary module checklist (complete)
 
-- [ ] `modules/mod-cs-0412022.md` (+ validation notes)
-- [ ] `modules/mod-arxiv-1411-5679.md`
-- [ ] `modules/mod-arxiv-2505-14698.md`
-- [ ] `modules/mod-math-0209332.md`
-- [ ] `modules/mod-hilbert-machine.md`
+- [x] `modules/mod-cs-0412022.md` (+ validation notes)
+- [x] `modules/mod-arxiv-1411-5679.md` (+ validation notes, Math & CS Wizard 2026-03-24)
+- [x] `modules/mod-arxiv-2505-14698.md` (+ validation notes)
+- [x] `modules/mod-math-0209332.md` (+ validation notes, Math & CS Wizard 2026-03-24)
+- [x] `modules/mod-hilbert-machine.md` (+ validation notes, Math & CS Wizard 2026-03-24)
 
 ---
 
@@ -225,12 +248,12 @@ Five additional references extend **priors, convergence guarantees, discounted s
 
 | Source | Module file | Intended use (to be refined by Research Engineer) |
 |--------|-------------|---------------------------------------------------|
-| [cs/0412022](https://arxiv.org/pdf/cs/0412022) | `mod-cs-0412022.md` | Foundational sequential decision / universal setting; tightens definitions for §2–§3. |
-| [1411.5679](https://arxiv.org/pdf/1411.5679) | `mod-arxiv-1411-5679.md` | Typically **discounted** or approximate-AIXI variants; align \(\gamma\) and planning horizons with §4. |
-| [2505.14698](https://arxiv.org/pdf/2505.14698) | `mod-arxiv-2505-14698.md` | Recent algorithmic or theoretical angle; explicit bridge to MC-AIXI / Self-AIXI / AIQI. |
-| [math/0209332](https://arxiv.org/pdf/math/0209332) | `mod-math-0209332.md` | Mixture / prediction convergence machinery; informs **tests** and \(\xi\) misspecification statements. |
+| [cs/0412022](https://arxiv.org/pdf/cs/0412022) | `mod-cs-0412022.md` | **Corrected:** Potgieter surveys **Zeno machines & hypercomputation** (Church–Turing, halting, “Turing barrier” rhetoric). **Cite-only** scope/computability boundary for v1—reinforces finite \(\mathcal{M},\mathcal{P}\) and Turing-bounded runtime; pairs with §8 and `mod-hilbert-machine.md`, not §2–§3 env APIs. |
+| [1411.5679](https://arxiv.org/pdf/1411.5679) | `mod-arxiv-1411-5679.md` | **Corrected:** Kim (cs.FL) on **Zeno machines and infinite-time Turing machines**—**cite-only** boundary (no universal halting via infinite-time exploitation in the paper’s setup). Pairs with Potgieter/Müller on hypercomputation; **not** a discounted-AIXI reference. |
+| [2505.14698](https://arxiv.org/pdf/2505.14698) | `mod-arxiv-2505-14698.md` | **Corrected:** Müller (cs.LO) on **hypercomputing supertasks** vs Church–Turing—**cite-only** scope/computability boundary; **no** algorithmic bridge to MC-AIXI / Self-AIXI / AIQI. Pairs with §8 and `mod-cs-0412022.md` / `mod-arxiv-1411-5679.md`. |
+| [math/0209332](https://arxiv.org/pdf/math/0209332) | `mod-math-0209332.md` | **Corrected:** Ord surveys **hypercomputation** (models beyond TMs) and Church–Turing misconceptions—**cite-only** boundary for §3 \(\xi\): explains why **finite** \(\mathcal{M}\) and Turing-bounded updates are required; **not** mixture-convergence theory. Pairs with §8 and `mod-cs-0412022.md` / `mod-arxiv-2505-14698.md`. Optional **tests**: bounded-time mixture updates in CI. |
 | [HilbertMachine.pdf](https://philsci-archive.pitt.edu/2869/1/HilbertMachine.pdf) | `mod-hilbert-machine.md` | Computability / limits narrative; feeds §8 risks and **scope boundaries** for v1. |
 
 **Process:** Research Engineer completes each module spec **first**. Math & CS Wizard fills **Validation notes** in the same file (or follow-up PR), checking consistency with §1 and flagging non-computable claims before implementation milestones.
 
-**CEO merge rule:** When all five module specs are **content-complete** and validated, fold any stable definitions into §1–§4 and close the supplementary checklist above.
+**CEO merge rule:** When all five module specs are **content-complete** and validated, fold any stable definitions into §1–§4 and close the supplementary checklist above. **Done 2026-03-25** (§1.1 + §2–§4 hooks + §10 row correction for `1411.5679`).
