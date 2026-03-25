@@ -33,3 +33,5 @@ Module specs live under `modules/` (Research Engineer primary; Math & CS Wizard 
 ## Repo context
 
 Use existing `CR-CA` abstractions where they help (agents, templates, prediction hooks); do not force-fit causal machinery where it does not apply.
+
+- **Local smoke:** `uv run --extra aixi python -m aixi.experiments.run_smoke` (parity + short MCTS; `python -m aixi.experiments.run_smoke --help` for flags).
