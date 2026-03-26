@@ -2,6 +2,12 @@
 
 This module provides a lightweight causal reasoning agent with LLM integration,
 implemented in pure Python and intended as a flexible CR-CA engine for Swarms.
+
+Pearl alignment: Intervention propagation follows do-operator semantics (graph
+surgery). Counterfactuals use abduction-action-prediction with the same
+nonlinearity as intervention prediction. For full Pearl compliance (d-separation,
+backdoor/frontdoor/IV identification, explicit LinearGaussianSCM), use the
+crca_core package. Use CRCAAgent for LLM-integrated heuristic exploration.
 """
 
 # Standard library imports
@@ -1009,6 +1015,7 @@ class CRCAAgent(Agent):
         self.use_nonlinear_scm: bool = True
         self.nonlinear_activation: str = "tanh"  # options: 'tanh'|'identity'
         self.interaction_terms: Dict[str, List[Tuple[str, str]]] = {}
+        self.intercepts: Dict[str, float] = {}  # per-node beta_0 for Pearl alignment
         self.edge_sign_constraints: Dict[Tuple[str, str], int] = {}
         self.bayesian_priors: Dict[Tuple[str, str], Dict[str, float]] = {}
         self.enable_batch_predict = bool(enable_batch_predict)
@@ -2002,9 +2009,9 @@ class CRCAAgent(Agent):
                 pz = z_pred.get(p, z_state.get(p, 0.0))
                 strength = self._edge_strength(p, node)
                 s += pz * strength
-            
-            z_pred[node] = s
-        
+
+            z_pred[node] = s + float(self.intercepts.get(node, 0.0))
+
         return {v: self._destandardize_value(v, z) for v, z in z_pred.items()}
     
     def _predict_outcomes_with_graph_variant(
@@ -2090,7 +2097,11 @@ class CRCAAgent(Agent):
                         gamma = float(edge_data.get("interaction_strength", {}).get(p2, 0.0))
                     interaction_term += gamma * z1 * z2
 
-            model_z = linear_term + interaction_term
+            model_z = (
+                linear_term
+                + interaction_term
+                + float(self.intercepts.get(node, 0.0))
+            )
 
             if use_noise:
                 model_z += float(use_noise.get(node, 0.0))
@@ -2100,13 +2111,9 @@ class CRCAAgent(Agent):
             else:
                 model_z_act = float(model_z)
 
-            observed_z = z_state.get(node, 0.0)
-
-            threshold = float(getattr(self, "shock_preserve_threshold", 1e-3))
-            if abs(observed_z) > threshold:
-                z_pred[node] = float(observed_z)
-            else:
-                z_pred[node] = float(model_z_act)
+            # Pearl do-operator: propagate from intervened state; do not preserve
+            # observed values for non-intervened nodes (removed shock_preserve)
+            z_pred[node] = float(model_z_act)
 
         return z_pred
 
@@ -2169,7 +2176,10 @@ class CRCAAgent(Agent):
         factual_state: Dict[str, float],
         interventions: Dict[str, float]
     ) -> Dict[str, float]:
-        
+        """Pearl Level 3: abduct noise, apply interventions, predict.
+
+        Uses same nonlinearity as _predict_outcomes for consistency.
+        """
         z = self._standardize_state(factual_state)
 
         noise: Dict[str, float] = {}
@@ -2185,7 +2195,19 @@ class CRCAAgent(Agent):
                 strength = self._edge_strength(p, node)
                 pred_z += pz * strength
 
-            noise[node] = float(z.get(node, 0.0) - pred_z)
+            interaction_term = 0.0
+            for (p1, p2) in self.interaction_terms.get(node, []):
+                if p1 in parents and p2 in parents:
+                    z1, z2 = z.get(p1, 0.0), z.get(p2, 0.0)
+                    gamma = 0.0
+                    edge_data = self.causal_graph.get(p1, {}).get(node, {})
+                    if isinstance(edge_data, dict):
+                        gamma = float(edge_data.get("interaction_strength", {}).get(p2, 0.0))
+                    interaction_term += gamma * z1 * z2
+
+            noise[node] = float(
+                z.get(node, 0.0) - pred_z - interaction_term - self.intercepts.get(node, 0.0)
+            )
 
         cf_raw = factual_state.copy()
         cf_raw.update(interventions)
@@ -2208,9 +2230,57 @@ class CRCAAgent(Agent):
                 strength = self._edge_strength(p, node)
                 val += parent_z * strength
 
-            z_pred[node] = float(val + noise.get(node, 0.0))
+            interaction_term = 0.0
+            for (p1, p2) in self.interaction_terms.get(node, []):
+                if p1 in parents and p2 in parents:
+                    z1 = z_pred.get(p1, z_cf.get(p1, 0.0))
+                    z2 = z_pred.get(p2, z_cf.get(p2, 0.0))
+                    gamma = 0.0
+                    edge_data = self.causal_graph.get(p1, {}).get(node, {})
+                    if isinstance(edge_data, dict):
+                        gamma = float(edge_data.get("interaction_strength", {}).get(p2, 0.0))
+                    interaction_term += gamma * z1 * z2
+
+            val = float(
+                val + interaction_term + noise.get(node, 0.0) + self.intercepts.get(node, 0.0)
+            )
+
+            if self.use_nonlinear_scm and self.nonlinear_activation == "tanh":
+                val = float(np.tanh(val) * 3.0)
+
+            z_pred[node] = val
 
         return {v: self._destandardize_value(v, z_val) for v, z_val in z_pred.items()}
+
+    def counterfactual_nested(
+        self,
+        factual_state: Dict[str, float],
+        intervention_sequence: List[Dict[str, float]],
+    ) -> Dict[str, float]:
+        """Nested counterfactuals: chain interventions from a base state.
+
+        Each step uses the previous state as base; abduction from a counterfactual
+        state recovers the same exogenous U, so chaining is Pearl-consistent.
+
+        Example: "Given we did A=0, what if we also did B=5?"
+        → counterfactual_nested(factual, [{"A": 0}, {"B": 5}])
+
+        Args:
+            factual_state: The factual (observed) state
+            intervention_sequence: List of intervention dicts, applied in order
+
+        Returns:
+            Final state after applying all interventions in sequence
+        """
+        if not intervention_sequence:
+            return dict(factual_state)
+
+        state = dict(factual_state)
+        for intervention in intervention_sequence:
+            if not intervention:
+                continue
+            state = self.counterfactual_abduction_action_prediction(state, intervention)
+        return state
 
     def detect_confounders(self, treatment: str, outcome: str) -> List[str]:
         

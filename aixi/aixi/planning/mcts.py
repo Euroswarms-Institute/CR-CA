@@ -18,6 +18,10 @@ if TYPE_CHECKING:
     from aixi.aixi.models.mixture import MixtureEnvModel
 
 from aixi.aixi.models.ctw_pyaixi import PyAixiCTWBitMixture
+from aixi.aixi.planning.xi_rollouts import (
+    imagined_trajectory_discounted_return,
+    restore_mixture_after_imagination,
+)
 
 
 @dataclass(frozen=True)
@@ -49,78 +53,6 @@ class MCTSSearchBudget:
             raise ValueError("discount_gamma must be in (0, 1]")
 
 
-def _sample_next_bit(xi: MixtureEnvModel, rng: Random) -> int:
-    p1 = float(xi.predict_bit_probability(1))
-    p1 = min(1.0, max(0.0, p1))
-    return 1 if rng.random() < p1 else 0
-
-
-def _sample_percept_and_learn(
-    xi: MixtureEnvModel,
-    n_percept_bits: int,
-    rng: Random,
-) -> list[int]:
-    symbols: list[int] = []
-    for _ in range(n_percept_bits):
-        b = _sample_next_bit(xi, rng)
-        symbols.append(b)
-        xi.learn_symbols([b])
-    return symbols
-
-
-def _rollout_after_first_action(
-    xi: MixtureEnvModel,
-    *,
-    first_action: int,
-    encode_action: Callable[[int], Sequence[int]],
-    n_action_bits: int,
-    n_percept_bits: int,
-    decode_reward: Callable[[Sequence[int]], float],
-    valid_actions: Sequence[int],
-    remaining_steps: int,
-    gamma: float,
-    rng: Random,
-) -> float:
-    """
-    One imagined (action → percept) step with ``first_action``, then
-    ``remaining_steps - 1`` steps with uniform-random actions (playout policy).
-    Returns discounted return; mutates ``xi`` — caller must revert.
-    """
-    g = 0.0
-    discount = 1.0
-
-    a_syms = list(encode_action(first_action))
-    xi.append_history_symbols(a_syms)
-    percept_syms = _sample_percept_and_learn(xi, n_percept_bits, rng)
-    r = float(decode_reward(percept_syms))
-    g += discount * r
-    discount *= gamma
-
-    for _ in range(remaining_steps - 1):
-        a = rng.choice(valid_actions)
-        a_syms = list(encode_action(a))
-        xi.append_history_symbols(a_syms)
-        percept_syms = _sample_percept_and_learn(xi, n_percept_bits, rng)
-        r = float(decode_reward(percept_syms))
-        g += discount * r
-        discount *= gamma
-
-    return g
-
-
-def _revert_imagined_trajectory(
-    xi: MixtureEnvModel,
-    *,
-    n_action_bits: int,
-    n_percept_bits: int,
-    n_cycles: int,
-) -> None:
-    """Undo ``n_cycles`` (action → percept) pairs from the model (MC-AIXI undo order)."""
-    for _ in range(n_cycles):
-        xi.revert_learned_symbols(n_percept_bits)
-        xi.revert_history_symbols(n_action_bits)
-
-
 def root_uct_action(
     xi: MixtureEnvModel,
     budget: MCTSSearchBudget,
@@ -136,6 +68,10 @@ def root_uct_action(
     Root-only predictive UCT: each simulation picks an arm (legal action), runs a
     bounded-length rollout under ξ (sampled percepts), backs up the return, then
     **fully reverts** ξ to the pre-rollout state.
+
+    **Exploration term:** arms with zero visits use ``c·sqrt(log n + ε)`` with small ``ε``,
+    not the unbounded ``+∞`` bonus of textbook UCT — a finite-root variant appropriate
+    for fixed ``mc_simulations``.
 
     Preconditions: same as MC-AIXI ``search()`` — ξ must be ready for an **action**
     (real history should end with a learned percept).
@@ -182,7 +118,7 @@ def root_uct_action(
                     best_a = a
             chosen = best_a
 
-        ret = _rollout_after_first_action(
+        ret = imagined_trajectory_discounted_return(
             xi,
             first_action=chosen,
             encode_action=encode_action,
@@ -190,32 +126,22 @@ def root_uct_action(
             n_percept_bits=n_percept_bits,
             decode_reward=decode_reward,
             valid_actions=actions,
-            remaining_steps=h,
+            n_cycles=h,
             gamma=budget.discount_gamma,
             rng=rng,
+            subsequent_action=None,
         )
-        if xi_snap is not None:
-            assert isinstance(xi, PyAixiCTWBitMixture)
-            xi.replay_symbol_history(
-                xi_snap,
-                n_action_bits=n_action_bits,
-                n_percept_bits=n_percept_bits,
-            )
-        else:
-            _revert_imagined_trajectory(
-                xi,
-                n_action_bits=n_action_bits,
-                n_percept_bits=n_percept_bits,
-                n_cycles=h,
-            )
+        restore_mixture_after_imagination(
+            xi,
+            xi_snap=xi_snap,
+            ref_log_p=ref_log_p,
+            n_action_bits=n_action_bits,
+            n_percept_bits=n_percept_bits,
+            n_cycles=h,
+        )
 
         visits[chosen] += 1
         sum_returns[chosen] += ret
-
-        if not math.isclose(xi.root_log_probability(), ref_log_p, rel_tol=0.0, abs_tol=1e-8):
-            raise RuntimeError(
-                "ξ root log P drifted after revert — inner loop must pair learn/revert"
-            )
 
     # Pick most visited (tie-break toward higher mean, then lower action id).
     best = max(

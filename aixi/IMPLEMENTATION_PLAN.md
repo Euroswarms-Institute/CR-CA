@@ -59,6 +59,7 @@ Stable boundary language shared across `aixi/modules/mod-*.md` (Potgieter, Kim, 
 - **Computable** means **standard Turing machines** with explicit **per-tick / per-call budgets**. v1 does **not** assume Zeno clocks, supertasks, “halting from an infinite run,” TM+oracle steps, or other hypercomputer semantics.
 - **`MixtureEnvModel`** (§3) implementations expose a **finite** model catalog and **`predict` / `update` / `revert`** that **terminate** under CI (and production) timeouts—operational proxies for “our \(\xi\) is not a hypercomputer.”
 - **Marketing / reviewer copy:** “Universal” priors mean **finite** \(\mathcal{M}\) (and \(\mathcal{P}\)) surrogates aligned with §8, not literal Solomonoff mixture over all computable environments confused with the hypercomputation literature.
+- **Reviewer rollup:** [`SUPERTASK_BOUNDARY.md`](SUPERTASK_BOUNDARY.md) states what v1 does **not** implement (no Zeno / \(\omega\)-step schedulers in the L1–L3 core) and links the cite-only `modules/mod-*.md` cluster.
 
 ---
 

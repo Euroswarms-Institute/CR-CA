@@ -99,7 +99,7 @@ def test_root_uct_leaves_xi_root_log_p_unchanged_two_armed_bandit_wrapped() -> N
 
 @pyaixi
 def test_mcts_mean_return_vs_baselines_biased_coin() -> None:
-    """Tiny regression: ξ + root UCT should beat random / first-action on average."""
+    """Non-binding smoke: one fixed seed block; loose margin vs baselines (not a statistical guarantee)."""
     horizon = 10
     episodes = 48
     budget = MCTSSearchBudget(mc_simulations=16, planning_horizon=4, uct_exploration_c=1.25)
