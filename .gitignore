@@ -63,7 +63,7 @@ cython_debug/
 # Virtual environments
 venv/
 venv_wsl/
-env/
+/env/
 ENV/
 env.bak/
 venv.bak/

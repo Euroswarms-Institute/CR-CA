@@ -2,6 +2,10 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Optional deps may pin VCS packages (e.g. pyaixi) for the `aixi` extra.
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [project]
 name = "crca"
 version = "1.5.0"
@@ -92,9 +96,14 @@ dependencies = [
 optimization = [
   "cvxpy>=1.4",  # Requires C++ build tools on Windows (Microsoft Visual C++ 14.0+)
 ]
+aixi = [
+  "six>=1.16",
+  "pyaixi @ git+https://github.com/sgkasselau/pyaixi.git",
+]
 dev = [
   "pytest>=7.0",
   "pytest-cov>=4.0",
+  "hypothesis>=6.0",
   "black>=23.0",
   "mypy>=1.0",
   "ruff>=0.1.0",
@@ -121,6 +130,7 @@ packages = [
   "branches.crca_sd",
   "branches.crca_cg",
   "prompts",
+  "aixi",
 ]
 # Also explicitly include root files - this ensures they're in the wheel
 # Root files go at wheel root, not in a subdirectory
@@ -154,6 +164,17 @@ exclude = [
 minversion = "7.0"
 addopts = "-q"
 testpaths = ["tests"]
+markers = [
+  "aixi_formal_ci: WP-Formal-CI (SWA-21 §10) cross-family property tests",
+  "aixi_p1: P1 revert/replay restores mixture state",
+  "aixi_p2: P2 full revert matches pre-search snapshot",
+  "aixi_p3: P3 policy mixture ω normalizes",
+  "aixi_p4: P4 no ω update on unrealized branches",
+  "aixi_p5: P5 augmentation index deterministic in (t, N)",
+  "aixi_p6: P6 ε-greedy schedule contract",
+  "aixi_p7: P7 predict/update wall-clock budget smoke",
+  "aixi_supertask: finite supertask surrogate (SWA-25) property tests",
+]
 filterwarnings = [
   "ignore:.*asyncio.iscoroutinefunction.*:DeprecationWarning:litellm.*",
   "ignore:.*setParseAction.*:DeprecationWarning:pydot.*",
