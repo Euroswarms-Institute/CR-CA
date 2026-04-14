@@ -8,7 +8,7 @@ allow-direct-references = true
 
 [project]
 name = "crca"
-version = "1.5.0"
+version = "1.5.1"
 description = "CR-CA Wrapper for CR-CA LRM on HF (Depricated)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -47,6 +47,7 @@ dependencies = [
   "numpy>=1.23",
   "pandas>=1.5",
   "scipy>=1.10",
+  "ruptures>=1.1.8",  # change-point detection (templates.drift_detection, HybridDriftDetector)
   "rustworkx>=0.12.0",
   "networkx>=3.0",
   "dowhy>=0.8",
@@ -100,6 +101,10 @@ aixi = [
   "six>=1.16",
   "pyaixi @ git+https://github.com/sgkasselau/pyaixi.git",
 ]
+# Symbolic math path for image_annotation (optional import)
+image = [
+  "sympy>=1.12",
+]
 dev = [
   "pytest>=7.0",
   "pytest-cov>=4.0",
@@ -121,14 +126,18 @@ Issues = "https://github.com/IlumCI/CR-CA/issues"
 packages = [
   "utils",
   "tools",
-  "templates", 
+  "templates",
   "schemas",
   "crca_core",
   "crca_llm",
   "crca_sd",
+  "crca_reasoning",
+  "training",
+  "image_annotation",
   "branches",
   "branches.crca_sd",
   "branches.crca_cg",
+  "branches.general_agent",
   "prompts",
   "aixi",
 ]
@@ -181,7 +190,4 @@ filterwarnings = [
   "ignore:Series.__getitem__.*:FutureWarning:dowhy.*",
   "ignore:divide by zero encountered in scalar divide:RuntimeWarning:statsmodels.*",
 ]
-
-[tool.hatch.build.targets.wheel]
-packages = ["."]
 
