@@ -1,7 +1,7 @@
 # CR-CA: Causal Reasoning and Counterfactual Analysis Framework
 
-**Version**: v1.5.0  
-**Repository**: [https://github.com/IlumCI/CR-CA](https://github.com/IlumCI/CR-CA)  
+**Version**: v2.0.0
+**Repository**: [https://github.com/IlumCI/CR-CA](https://github.com/IlumCI/CR-CA)
 **License**: Apache-2.0
 
 CR-CA is a comprehensive framework for causal reasoning and counterfactual analysis, combining structural causal models (SCMs) with large language model (LLM) integration. The framework enables sophisticated causal inference, automatic variable extraction from natural language, deterministic causal simulation, and comprehensive counterfactual scenario generation. Designed for both research and practical applications, CR-CA provides a modular architecture supporting specialized agents for quantitative trading, socioeconomic dynamics, and corporate governance.
@@ -3838,6 +3838,16 @@ See individual module documentation for detailed API references:
 
 ## Architecture & Design
 
+### Two-Tier Architecture
+
+CR-CA has a **two-tier architecture** that explicitly separates formal and heuristic reasoning:
+
+**Tier 1 — crca_core (Formal):** A strict causal inference package with DraftSpec → LockedSpec lifecycle, backdoor/frontdoor/IV/ID identification algorithms, and structured refusal under non-identifiability. This is the authoritative layer for formal causal claims.
+
+**Tier 2 — CRCAAgent (Heuristic):** A lightweight LLM-integrated agent with automatic variable extraction, deterministic causal simulation, OLS-based edge coefficient estimation, and polynomial mechanism discovery. This is the exploratory layer for fast simulation and prototyping.
+
+The correct relationship is hierarchical: for production causal claims, CRCAAgent should delegate to crca_core. The agent constructs a DraftSpec, locks it, and calls identify_effect before returning numeric causal outputs. This bridge is partially implemented but not yet enforced.
+
 ### System Architecture
 
 The CR-CA framework follows a modular architecture with clear separation of concerns:
@@ -3932,6 +3942,87 @@ CR-CA can be used for:
 - **Root Cause Analysis**: Identifying ultimate causes of problems
 - **Scenario Planning**: Exploring alternative futures
 - **Decision Support**: Causal reasoning for decision-making
+
+### Benchmark Results (v2.0.0)
+
+The expanded benchmark suite (`benchmark_expanded.py`) evaluates CRCA against Oracle (true SCM) and OLS Naive on 8 synthetic scenarios. Results are MAE ratios vs Oracle (lower is better; 1.0 = Oracle):
+
+#### Intervention MAE Ratio vs Oracle
+
+| Scenario | CRCA Linear | OLS Naive | Notes |
+|----------|-----------|-----------|-------|
+| collider | **0.50x** | 0.56x | CRCA correctly avoids conditioning on descendant |
+| chain | 2.61x | **2.25x** | OLS marginal effect works for serial mediation |
+| fork | **5.69x** | 25.14x | CRCA 4.4x better than OLS |
+| frontdoor | 14.91x | 16.39x | Needs frontdoor criterion (crca_core) |
+| hidden_confounding | 19.29x | **18.83x** | Needs backdoor adjustment or abstention |
+| iv | 26.16x | **24.14x** | Needs IV/2SLS (crca_core) |
+| multi_confounder | 32.49x | **13.95x** | OLS edge estimation misleading with confounders |
+| nonlinear | 37.05x | 37.41x | Polynomial discovery not yet integrated in nonlinear mode |
+
+#### Counterfactual Coverage @0.5
+
+| Scenario | CRCA Linear | OLS Naive |
+|----------|-----------|-----------|
+| chain | **1.00** | 0.61 |
+| collider | **1.00** | 0.46 |
+| fork | **0.56** | 0.12 |
+| frontdoor | 0.09 | 0.06 |
+| hidden_confounding | 0.09 | **0.12** |
+| iv | **0.22** | 0.13 |
+| multi_confounder | 0.11 | **0.15** |
+| nonlinear | **0.49** | 0.46 |
+
+**Summary:** CRCA outperforms OLS on 4/8 intervention scenarios and 5/8 counterfactual coverage scenarios. Remaining gaps (frontdoor, iv, hidden_confounding, multi_confounder) require integrating crca_core's backdoor/frontdoor/IV identification algorithms into CRCAAgent's prediction pipeline.
+
+### Audit Report
+
+This section documents findings from a comprehensive code audit conducted on 2026-05-27.
+
+#### Pre-Audit State (v1.5.0)
+
+The original implementation violated 4 of 5 formal correctness requirements:
+
+| Requirement | Status |
+|-------------|--------|
+| Conditioning/Intervention separation | Violated (propagation bug) |
+| Explicit model class | Missing |
+| Mechanism preservation | FAILED |
+| Counterfactual same-unit consistency | FAILED |
+| Non-identifiability handling | FAILED |
+
+#### Post-Audit State (v1.5.1)
+
+After fixes, CRCAAgent satisfies 4.5/5 formal requirements when configured correctly:
+
+| Requirement | Status |
+|-------------|--------|
+| Conditioning/Intervention separation | PASS |
+| Explicit model class | PASS |
+| Mechanism preservation | PASS |
+| Counterfactual same-unit consistency | PASS |
+| Non-identifiability handling | PARTIAL (flag exists but disabled by default) |
+
+#### Key Findings
+
+1. **Two-System Problem**: The repository contains two causally distinct implementations — `CRCAAgent` (heuristic) and `crca_core` (formal). The paper conflated them.
+
+2. **OLS Edge Estimation**: Learning edge coefficients from data via OLS works for correctly-specified graphs without confounders. It fails under confounding because OLS coefficients are associational, not causal.
+
+3. **Polynomial Discovery**: The incremental R² thresholding approach correctly identifies polynomial terms but is not yet integrated into the nonlinear benchmark mode.
+
+4. **Remaining Gaps**: The formal tier (crca_core) with backdoor/frontdoor/IV identification is not wired into CRCAAgent. Users must manually check identifiability.
+
+### Limitations
+
+CR-CA cannot claim:
+- That a generated graph is true merely because it is explicit
+- Causal direction from text alone without domain assumptions or data
+- P(Y|do(X=x)) from P(Y|X=x) without valid causal assumptions
+- Resolution of hidden confounding by formatting the problem better
+- Reliable Oracle-beating performance on all scenarios
+
+CR-CA should be configured with `use_nonlinear_scm=False` and `nonlinear_activation="identity"` for formally correct behavior.
 
 ### Extending the Framework
 
@@ -4217,6 +4308,27 @@ pip install pytest black mypy
 ---
 
 ## Changelog
+
+### v2.0.0
+
+- **Expanded Benchmark Suite**: New `benchmark_expanded.py` with 8 synthetic scenarios (chain, fork, collider, multi_confounder, frontdoor, iv, nonlinear, hidden_confounding) and multiple models (Oracle, OLS Naive, CR-CA Linear, CR-CA Nonlinear, DoWhy Backdoor, CRCA Formal)
+- **OLS Edge Coefficient Estimation**: CRCA can now learn causal edge strengths from observational data via OLS regression in z-standardized space
+- **Polynomial Mechanism Discovery**: Automatic detection of polynomial (nonlinear) terms in structural equations using incremental R² thresholding
+- **Formal Requirement Compliance**: All 137 tests pass; CRCAAgent satisfies 4.5/5 formal requirements when configured correctly
+- **Two-Tier Architecture Acknowledged**: Paper and documentation now explicitly distinguish the heuristic tier (CRCAAgent) from the formal tier (crca_core)
+- **Benchmark Results**:
+  - CRCA outperforms OLS on collider (0.50x vs 0.56x Oracle error) and fork (5.69x vs 25.14x)
+  - CRCA counterfactual coverage beats OLS on 5/8 scenarios
+  - Remaining gaps: frontdoor/IV/hidden_confounding require causal identification algorithms (not yet integrated from crca_core)
+
+### v1.5.1
+
+- **Descendant-Only Propagation Fix**: Intervention now only recomputes descendants, preserving non-descendants
+- **Model Class Declaration**: Added `model_class` attribute, `model_class_options`, and `set_model_class()` method
+- **Epistemic Status on Edges**: Added `epistemic_status` field to all causal relationships
+- **Identifiability Checking**: Added `check_identifiability()` method and `abstain_on_nonidentifiable` flag
+- **Assumption Ledger**: Added `get_assumption_ledger()` method for audit traceability
+- **Nonlinear Heuristic Documentation**: Explicit warning that tanh scaling is an engineering heuristic, not a causal mechanism
 
 ### v1.4.0 (Current)
 
