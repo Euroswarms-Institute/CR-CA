@@ -1015,9 +1015,20 @@ class CRCAAgent(Agent):
         self.use_nonlinear_scm: bool = True
         self.nonlinear_activation: str = "tanh"  # options: 'tanh'|'identity'
         self.interaction_terms: Dict[str, List[Tuple[str, str]]] = {}
+        self.polynomial_terms: Dict[str, List[Tuple[str, int]]] = {}
         self.intercepts: Dict[str, float] = {}  # per-node beta_0 for Pearl alignment
         self.edge_sign_constraints: Dict[Tuple[str, str], int] = {}
         self.bayesian_priors: Dict[Tuple[str, str], Dict[str, float]] = {}
+        self._edge_strengths_fitted: Dict[Tuple[str, str], float] = {}
+
+        # Model class declaration
+        self.model_class: str = "acyclic_scm"
+        self.model_class_options: List[str] = [
+            "acyclic_scm", "cyclic_scm", "temporal_dynamic",
+            "equilibrium", "potential_outcomes", "simulator_defined"
+        ]
+        self.abstain_on_nonidentifiable: bool = False
+
         self.enable_batch_predict = bool(enable_batch_predict)
         self.max_batch_size = int(max_batch_size)
         self.bootstrap_workers = int(max(0, bootstrap_workers))
@@ -1118,6 +1129,17 @@ class CRCAAgent(Agent):
             except ImportError as e:
                 logger.warning(f"Excel TUI modules not available: {e}")
                 self._excel_enabled = False
+
+    def set_model_class(self, model_class: str) -> None:
+        """Set the causal model class.
+
+        Args:
+            model_class: One of 'acyclic_scm', 'cyclic_scm', 'temporal_dynamic',
+                'equilibrium', 'potential_outcomes', 'simulator_defined'
+        """
+        if model_class not in self.model_class_options:
+            raise ValueError(f"Unknown model class: {model_class}. Options: {self.model_class_options}")
+        self.model_class = model_class
 
     @staticmethod
     def _get_cr_ca_schema() -> Dict[str, Any]:
@@ -1739,14 +1761,15 @@ class CRCAAgent(Agent):
             pass
 
     def add_causal_relationship(
-        self, 
-        source: str, 
-        target: str, 
+        self,
+        source: str,
+        target: str,
         strength: float = 1.0,
         relation_type: CausalRelationType = CausalRelationType.DIRECT,
-        confidence: float = 1.0
+        confidence: float = 1.0,
+        epistemic_status: str = "assumed"
     ) -> None:
-        
+
         self._ensure_node_exists(source)
         self._ensure_node_exists(target)
 
@@ -1754,6 +1777,7 @@ class CRCAAgent(Agent):
             "strength": float(strength),
             "relation_type": relation_type.value if isinstance(relation_type, Enum) else str(relation_type),
             "confidence": float(confidence),
+            "epistemic_status": epistemic_status,
         }
 
         self.causal_graph.setdefault(source, {})[target] = meta
@@ -1839,7 +1863,168 @@ class CRCAAgent(Agent):
                 )
             except Exception:
                 pass
-    
+
+    def add_polynomial_term(
+        self,
+        parent: str,
+        target: str,
+        exponent: int = 2,
+        epistemic_status: str = "discovered_from_data"
+    ) -> None:
+        if exponent < 2:
+            raise ValueError(f"Exponent must be >= 2, got {exponent}")
+        if target not in self.causal_graph:
+            self._ensure_node_exists(target)
+        if parent not in self.causal_graph:
+            self._ensure_node_exists(parent)
+
+        self.polynomial_terms.setdefault(target, []).append((parent, exponent))
+
+    def set_polynomial_terms_from_data(
+        self,
+        target: str,
+        parent: str,
+        data_x: np.ndarray,
+        data_y: np.ndarray,
+        max_exponent: int = 3,
+        r2_threshold: float = 0.01
+    ) -> bool:
+        discovered_exps: List[int] = []
+
+        if len(data_x) < 10 or len(data_y) < 10:
+            return False
+
+        z_x = (data_x - np.mean(data_x)) / max(np.std(data_x), 1e-8)
+        z_y = (data_y - np.mean(data_y)) / max(np.std(data_y), 1e-8)
+
+        base_terms = [np.ones(len(z_x)), z_x]
+        base_rss = self._polynomial_incremental_r2(z_y, base_terms, len(z_x))
+
+        for exp in range(2, max_exponent + 1):
+            z_x_exp = z_x ** exp
+            test_terms = base_terms + [z_x_exp]
+            new_rss = self._polynomial_incremental_r2(z_y, test_terms, len(z_x))
+
+            if base_rss - new_rss >= r2_threshold:
+                discovered_exps.append(exp)
+                base_terms.append(z_x_exp)
+                base_rss = new_rss
+
+        if not discovered_exps:
+            return False
+
+        for exp in discovered_exps:
+            self.add_polynomial_term(parent, target, exp)
+
+        X_cols = [np.ones(len(z_y)), z_y]
+        for exp in discovered_exps:
+            X_cols.append(z_x ** exp)
+        X = np.column_stack(X_cols)
+
+        try:
+            betas, _, _, _ = np.linalg.lstsq(X, z_y, rcond=None)
+        except Exception:
+            return True
+
+        self.intercepts[target] = float(betas[0])
+
+        edge_data = self.causal_graph.setdefault(parent, {}).setdefault(target, {})
+        poly_strengths: Dict[int, float] = {}
+        for k, exp in enumerate(discovered_exps):
+            poly_strengths[exp] = float(betas[k + 2])
+
+        if isinstance(edge_data, dict):
+            edge_data["polynomial_strength"] = poly_strengths
+        else:
+            self.causal_graph[parent][target] = {
+                "strength": float(edge_data) if edge_data else 1.0,
+                "polynomial_strength": poly_strengths
+            }
+
+        return True
+
+    def _polynomial_incremental_r2(self, z_y: np.ndarray, terms: List[np.ndarray], n: int) -> float:
+        if n < 2:
+            return 0.0
+        X = np.column_stack(terms)
+        try:
+            betas, _, _, _ = np.linalg.lstsq(X, z_y, rcond=None)
+            residuals = z_y - X @ betas
+            rss = np.sum(residuals ** 2)
+            return rss / n
+        except Exception:
+            return float('inf')
+
+    def set_polynomial_coefficient(
+        self,
+        parent: str,
+        target: str,
+        exponent: int,
+        coefficient: float
+    ) -> None:
+        edge_data = self.causal_graph.setdefault(parent, {}).setdefault(target, {})
+        if isinstance(edge_data, dict):
+            edge_data.setdefault("polynomial_strength", {})[exponent] = float(coefficient)
+        else:
+            self.causal_graph[parent][target] = {
+                "strength": float(edge_data) if edge_data else 1.0,
+                "polynomial_strength": {exponent: float(coefficient)}
+            }
+
+    def disable_linear_for_polynomial(self, parent: str, target: str) -> None:
+        if target in self.causal_graph.get(parent, {}):
+            edge_data = self.causal_graph[parent][target]
+            if isinstance(edge_data, dict):
+                edge_data["strength"] = 0.0
+            else:
+                self.causal_graph[parent][target] = {"strength": 0.0}
+
+    def estimate_edge_coefficients(self, data: Dict[str, np.ndarray]) -> None:
+        """Fit edge coefficients from observational data using OLS regression.
+
+        For each edge u->v in the causal graph, fits z_v = beta * z_u + intercept
+        in z-space to estimate the conditional expectation E[Z_v | Z_u]. This is used
+        to set edge strengths for causal propagation.
+
+        For nodes with multiple parents, multivariate OLS is used. Polynomial terms
+        (if discovered) are NOT used in edge coefficient estimation — only linear terms.
+
+        Must be called after all edges, standardization stats, and polynomial terms
+        are set.
+        """
+        for source, targets in list(self.causal_graph.items()):
+            for target_key in list(targets.keys()):
+                parents = self._get_parents(target_key)
+                if len(parents) == 0:
+                    continue
+
+                if target_key in self.polynomial_terms:
+                    continue
+
+                z_y = (data[target_key] - self.standardization_stats[target_key]["mean"]) / self.standardization_stats[target_key]["std"]
+
+                X_cols = []
+                for p in parents:
+                    z_p = (data[p] - self.standardization_stats[p]["mean"]) / self.standardization_stats[p]["std"]
+                    X_cols.append(z_p)
+
+                X_cols.append(np.ones(len(z_y)))
+                X = np.column_stack(X_cols)
+
+                try:
+                    betas, _, _, _ = np.linalg.lstsq(X, z_y, rcond=None)
+                except Exception:
+                    continue
+
+                if len(betas) >= 2:
+                    beta_lin = float(betas[0])
+                    self._edge_strengths_fitted[(source, target_key)] = beta_lin
+                    edge_meta = self.causal_graph.get(source, {}).get(target_key, {})
+                    if isinstance(edge_meta, dict):
+                        edge_meta["strength"] = beta_lin
+                    else:
+                        self.causal_graph.setdefault(source, {})[target_key] = {"strength": beta_lin, "relation_type": "direct", "confidence": 1.0}
+
     def _get_parents(self, node: str) -> List[str]:
         
         return self.causal_graph_reverse.get(node, [])
@@ -1990,25 +2175,45 @@ class CRCAAgent(Agent):
 
         raw = factual_state.copy()
         raw.update(interventions)
-        
+
         z_state = self._standardize_state(raw)
         z_pred = dict(z_state)
-        
+
+        # Compute descendants of all intervention variables
+        # Only descendants (and intervened nodes) should be recomputed
+        intervention_descendants: set = set()
+        for iv_node in interventions:
+            intervention_descendants.update(self._get_descendants(iv_node))
+
         for node in self._topological_sort():
             if node in interventions:
                 if node not in z_pred:
                     z_pred[node] = z_state.get(node, 0.0)
                 continue
-            
+
+            # Preserve non-descendants: if node is not a descendant of any
+            # intervention, keep its factual standardized value
+            if node not in intervention_descendants:
+                continue
+
             parents = self._get_parents(node)
             if not parents:
                 continue
-            
+
             s = 0.0
             for p in parents:
                 pz = z_pred.get(p, z_state.get(p, 0.0))
                 strength = self._edge_strength(p, node)
                 s += pz * strength
+
+            for (p, exp) in self.polynomial_terms.get(node, []):
+                if p in parents:
+                    pz = z_pred.get(p, z_state.get(p, 0.0))
+                    poly_coef = 0.0
+                    edge_data = self.causal_graph.get(p, {}).get(node, {})
+                    if isinstance(edge_data, dict):
+                        poly_coef = float(edge_data.get("polynomial_strength", {}).get(exp, 0.0))
+                    s += poly_coef * (pz ** exp)
 
             z_pred[node] = s + float(self.intercepts.get(node, 0.0))
 

@@ -1,0 +1,558 @@
+CR-CA: A Two-Tier Framework for Structured Causal Reasoning and Counterfactual Analysis
+Abstract
+
+CR-CA (Causal Reasoning – Counterfactual Analysis) is a two-tier framework for causal and counterfactual analysis. The strict tier, crca_core, provides formal causal identification, estimation, and spec lifecycle management under explicit assumptions. The heuristic tier, CRCAAgent, provides LLM-integrated causal exploration, automatic variable extraction, and deterministic causal simulation with learned edge coefficients and polynomial mechanism discovery. The framework's core contribution is not to replace statistical causal inference or guarantee causal truth, but to make the boundary between formal and heuristic reasoning explicit, auditable, and configurable.
+
+This paper reports the results of a comprehensive code audit and formal benchmark suite (v1.5.1) that validates the implementation against Pearl's causal hierarchy. The audit reveals that the heuristic tier satisfies formal correctness requirements only when explicitly configured for linear mechanisms, acyclic SCMs, and descendant-only propagation. The strict tier satisfies formal requirements for identification and refusal under non-identifiability. The main conclusion is that CR-CA is technically defensible when treated as a structured interface with clear epistemic boundaries, not as an assumption-free engine for deriving true causes from arbitrary text. Empirical benchmark results show that CR-CA's heuristic tier outperforms naive OLS on collider scenarios (0.50x Oracle error) and achieves competitive results on chain (2.61x) and fork (5.69x) scenarios, but requires proper causal identification algorithms (backdoor/frontdoor/IV) to close the gap on confounded scenarios.
+
+1. Introduction
+
+Modern language and agent systems often produce plausible chains of reasoning without a stable distinction between observation, mechanism, intervention, and counterfactual. Pearl's structural causal model tradition formalizes causality through variables, structural equations, graphs, interventions, and counterfactuals; it also distinguishes causal questions from purely associational statistical questions.
+
+CR-CA is motivated by this distinction. However, unlike prior work that treats LLM-integrated causal reasoning as uniformly valid or uniformly invalid, CR-CA explicitly separates two tiers:
+
+Tier 1 (Formal): crca_core — A strict causal inference package with DraftSpec → LockedSpec lifecycle, backdoor/frontdoor/IV/ID identification algorithms, and structured refusal under non-identifiability.
+
+Tier 2 (Heuristic): CRCAAgent — An LLM-integrated agent with automatic variable extraction, deterministic causal simulation with OLS-learned edge coefficients, polynomial mechanism discovery, and rich domain extensions (socioeconomic dynamics, corporate governance, quantitative trading).
+
+This separation is the central architectural contribution. It prevents the heuristic tier from making unchecked formal claims, and it prevents the formal tier from being buried under usability features.
+
+The core premise is that reasoning systems should explicitly separate at least six classes of information: observations, hypotheses, mechanisms, interventions, counterfactuals, and uncertainty. This separation does not guarantee truth. It makes errors more inspectable. A model can still infer the wrong graph, assume an invalid mechanism, or evaluate a counterfactual outside the support of available evidence. However, these failures become localized rather than hidden inside fluent prose.
+
+In the strict interpretation used here, CR-CA is not a domain-specific trading system, not a visual world model, not a deployment product, and not a general AGI architecture. It is a framework whose job is to receive a problem representation, construct or accept a causal representation, perform intervention/counterfactual analysis, and return structured reasoning traces with uncertainty and consistency checks.
+
+2. Background
+
+2.1 Association, Intervention, and Counterfactuals
+
+Pearl's causal hierarchy separates reasoning into three broad levels: association, intervention, and counterfactual reasoning. Associational questions concern passive observation, such as P(Y|X=x). Interventional questions concern manipulated systems, such as P(Y|do(X=x)). Counterfactual questions concern alternative outcomes for a specific unit or world, such as "given that X=x and Y=y occurred, what would Y have been if X had instead been x'?"
+
+CR-CA's formal tier belongs to all three levels. Its heuristic tier belongs primarily to levels two and three under configured constraints. Its core value is not in predicting correlations, but in forcing the reasoning process to ask whether a statement is observational, interventional, or counterfactual.
+
+2.2 Structural Causal Models
+
+A structural causal model may be written as:
+
+M = (U, V, F, P(U))
+
+where U is a set of exogenous variables, V is a set of endogenous variables, F is a set of structural functions, and P(U) is a distribution over exogenous noise or background factors. Each endogenous variable V_i ∈ V is determined by a function:
+
+V_i := f_i(Pa_i, U_i)
+
+where Pa_i are the parents of V_i in the causal graph. This graph is often represented as a directed acyclic graph when there are no feedback loops, although cyclic and dynamic systems require additional care.
+
+CR-CA's formal tier assumes acyclic SCMs by default. The heuristic tier supports acyclic SCMs in its linear mode; its default nonlinear mode (tanh-activated) is an engineering heuristic without formal justification in Pearl's framework and should be treated as a variance-stabilizing approximation rather than a causal mechanism.
+
+2.3 Potential Outcomes
+
+The potential outcomes framework defines causal effects by comparing outcomes under different treatments for the same unit or comparable units. A simple treatment effect may be written as:
+
+τ_i = Y_i(1) − Y_i(0)
+
+CR-CA's formal tier is closer in spirit to structural causal models than to pure potential outcomes, because it explicitly emphasizes mechanisms, graph structure, interventions, and branching worlds. However, potential outcomes remain relevant when CR-CA must express treatment comparisons without committing to a full mechanistic graph.
+
+3. Architecture: The Two-Tier Design
+
+3.1 Tier 1: crca_core (Formal)
+
+crca_core is a small, strict package for causal inference. Its design principles are:
+
+- Spec lifecycle: DraftSpec → LockedSpec. Only LockedSpec may authorize numeric causal outputs.
+- Explicit assumptions: Every graph, edge, and structural equation carries epistemic metadata.
+- Refusal-first: When identification fails, the system returns a RefusalResult, not a guess.
+- Provenance: Every identification result carries a ProvenanceManifest with a stable hash.
+
+The core API:
+
+identify_effect(locked_spec, treatment, outcome) → IdentificationResult | RefusalResult
+
+Supported identification strategies:
+- Backdoor criterion (with automatic adjustment set discovery)
+- Frontdoor criterion (with mediator validation)
+- Instrumental variables (with exclusion restriction checking)
+- Conservative ID algorithm (for complex graphs with latent confounders)
+
+3.2 Tier 2: CRCAAgent (Heuristic)
+
+CRCAAgent is a lightweight causal reasoning agent with LLM integration. It implements:
+
+- Automatic variable extraction from natural language via LLM tool calls
+- Deterministic causal simulation using linear or nonlinear structural equations
+- OLS-based edge coefficient estimation: learns causal edge strengths from observational data
+- Polynomial mechanism discovery: discovers polynomial (nonlinear) terms in structural equations from data
+- Counterfactual scenario generation with Monte Carlo uncertainty quantification
+- Policy engine integration, image annotation, and Excel bridge (domain extensions)
+
+CRCAAgent is NOT a formal causal discovery system. It is a structured reasoning interface that can be configured to respect formal constraints. Its deterministic simulation engine supports:
+
+- Linear propagation (Pearl-compliant when model_class="acyclic_scm" and nonlinear_activation="identity")
+- Polynomial propagation: discovers f(v) = ... + β·parent^exp + ... terms from data
+- Nonlinear propagation (tanh-activated, heuristic only)
+- Counterfactual abduction-action-prediction (Pearl Level 3)
+- Nested counterfactuals
+
+The OLS edge coefficient estimation fits z_v = Σ β_u·z_u + intercept in z-standardized space for each node. This provides correct marginal causal effects when the graph structure is correct but individual edge coefficients are unknown. For chains, this correctly recovers the marginal effect even when individual structural coefficients are not separately identifiable. For confounded graphs, OLS edge coefficients do NOT give correct causal effects — proper backdoor/frontdoor/IV adjustment is required.
+
+3.3 Relationship Between Tiers
+
+The correct relationship is hierarchical:
+
+- For research and audit: Use crca_core directly. Lock specs, identify effects, estimate with do-calculus.
+- For exploration and prototyping: Use CRCAAgent. Extract variables, simulate interventions, generate scenarios, discover polynomial terms.
+- For production causal claims: CRCAAgent should delegate to crca_core. The agent constructs a DraftSpec, locks it, and calls identify_effect before returning numeric causal outputs.
+
+This bridge is partially implemented but not enforced. Future work should make it mandatory.
+
+4. Mathematical Core
+
+4.1 Baseline World
+
+Let a world be represented as:
+
+W = (M, v, u, E)
+
+where M is the structural model, v is an assignment of endogenous variables, u is an assignment of exogenous variables, and E is observed evidence.
+
+The baseline world W is the model-conditioned reconstruction of the world that best explains the evidence. This corresponds loosely to the abduction step in Pearl-style counterfactual reasoning: infer background conditions compatible with the observed evidence before applying the counterfactual intervention.
+
+4.2 Intervention
+
+An atomic intervention do(X=x') modifies the model by replacing the original structural equation for X with a constant assignment:
+
+X := x'
+
+The intervened model is denoted M_do(X=x') or M_x'.
+
+The crucial constraint is that intervention is not conditioning. CR-CA must not silently replace P(Y|do(X=x)) with P(Y|X=x) unless an identification argument justifies doing so.
+
+4.3 Counterfactual World
+
+Given evidence E=e, a counterfactual query may be written as:
+
+P(Y_x' = y | E=e)
+
+In CR-CA terms, this means:
+1. Infer compatible background state u from E=e;
+2. Modify the model using do(X=x');
+3. Propagate the same inferred background state through the modified model;
+4. Compare Y in the baseline and intervened worlds.
+
+The baseline and counterfactual worlds should share the same exogenous background unless the intervention explicitly changes it.
+
+4.4 Descendant-Only Propagation
+
+A strict CR-CA rule (enforced in v1.5.1) is:
+
+After intervening on X, only X, its descendants, and variables mechanistically affected by the intervention may change. Non-descendants remain fixed unless the intervention changes the model boundary or exogenous state.
+
+Let De(X) denote descendants of X in graph G. For a surgical intervention do(X=x'), CR-CA enforces:
+
+V_j' = V_j for all V_j ∉ {X} ∪ De(X)
+
+This rule is valid for standard surgical interventions in acyclic SCMs. It is not automatically valid for cyclic systems, equilibrium systems, hidden common causes, or interventions that alter mechanisms globally. Therefore, CR-CA must mark this rule as conditional on the model class.
+
+4.5 OLS Edge Coefficient Estimation
+
+When the causal graph structure (edges) is known but edge coefficients are unknown, CR-CA can estimate them from observational data using OLS regression in z-standardized space.
+
+For a node V_j with parents Pa_j, the structural equation in standardized space is:
+
+z_j = Σ_{u∈Pa_j} β_{uj} · z_u + β_{0j} + ε_j
+
+where z_j = (V_j − μ_j) / σ_j is the standardized variable. CR-CA fits this via OLS and uses the estimated β_{uj} as the edge strength for causal propagation.
+
+This approach is correct when:
+- The graph structure (edges) is correctly specified
+- The structural equations are linear in z-space (possibly with polynomial terms)
+- There is no hidden confounding (all confounders are observed and in the graph)
+
+This approach has fundamental limitations:
+- In the presence of confounders, OLS edge coefficients are not structural coefficients and do not give correct causal effects. For example, in a fork Z→X, Z→Y, X→Y with confounder Z, the OLS coefficient of X on Y reflects the confounding effect of Z, not the causal effect of X on Y.
+- For chains X→Y→Z, individual edge coefficients (β_XY, β_YZ) are not identifiable from observational data — only their product β_XY · β_YZ is. OLS on Z~Y gives the correct marginal effect for predicting Z from Y, which yields the correct causal effect for do(X) on Z via the chain rule.
+
+4.6 Polynomial Mechanism Discovery
+
+CR-CA can discover polynomial (nonlinear) terms in structural equations from data. For each candidate edge u→v, it tests whether adding u^exp (for exp ∈ {2, 3}) to the regression of v on u significantly improves fit, using an incremental R² threshold (default 0.01).
+
+The procedure:
+1. Standardize: z_u = (u − μ_u) / σ_u, z_v = (v − μ_v) / σ_v
+2. Baseline: Fit z_v = β₀ + β₁·z_u + ε. Record RSS₀.
+3. For exp ∈ {2, 3}: Fit z_v = β₀ + β₁·z_u + β_exp·z_u^exp + ε. Record RSS_exp.
+4. If RSS₀ − RSS_exp ≥ r2_threshold · n, accept the polynomial term.
+
+When polynomial terms are discovered, they are added to the structural equation alongside linear terms. The linear term may be disabled via `disable_linear_for_polynomial()` to avoid double-counting when the relationship is purely polynomial.
+
+4.7 Decision Scoring
+
+CR-CA may support decision optimization, but only after causal states are represented. A generic decision score can be written as:
+
+Score(a) = E[U(W_a)] − λR(W_a) − γC(a)
+
+where a is an action or intervention, U is utility, R is risk, C is cost, and λ, γ are weighting parameters.
+
+This scoring expression is not a theorem. It is an engineering interface. The utility, risk, and cost terms must be domain-defined. CR-CA should not hide normative choices inside mathematical notation.
+
+5. Proposed Architecture
+
+5.1 Microkernel Interpretation
+
+The cleanest architecture for the formal tier is a microkernel architecture:
+
+Core kernel:
+
+K = (V, E, F, do, cf, score, audit)
+
+where:
+- V manages variables.
+- E manages evidence.
+- F manages mechanisms.
+- do applies interventions.
+- cf evaluates counterfactuals.
+- score ranks candidate worlds or actions.
+- audit records assumptions, uncertainty, and consistency violations.
+
+The kernel should remain small. Domain adapters, language interfaces, memory systems, LLM calls, simulators, UI layers, and datasets should live outside the core.
+
+5.2 Internal Pipeline
+
+A disciplined CR-CA pipeline is:
+
+Input → Parse → Boundary → Variables → Graph → Mechanisms → Evidence → Abduction → Intervention → Propagation → Comparison → Audit
+
+Each stage should expose failure states. For example:
+- insufficient variables;
+- ambiguous graph;
+- no identified causal effect;
+- intervention outside model support;
+- ungrounded mechanism;
+- counterfactual depends on hidden exogenous assumptions;
+- utility function underspecified.
+
+A mature CR-CA implementation should prefer returning "not identifiable under current assumptions" over producing a plausible but unjustified answer.
+
+6. Formal Correctness Requirements
+
+A mathematically disciplined CR-CA core should satisfy the following requirements.
+
+Requirement 1: Conditioning and Intervention Separation
+
+CR-CA must distinguish P(Y|X=x) from P(Y|do(X=x)). These expressions are equal only under specific conditions. Treating them as generally equivalent is a causal error.
+
+Requirement 2: Explicit Model Class
+
+CR-CA must state whether it assumes acyclic SCM, cyclic SCM, temporal dynamic model, equilibrium model, potential-outcomes-only model, or simulator-defined transition model. The descendant-only propagation rule is cleanest under acyclic SCM assumptions. It must not be blindly applied to dynamic feedback systems.
+
+Requirement 3: Mechanism Preservation Under Intervention
+
+For a surgical intervention, CR-CA must preserve all non-intervened mechanisms:
+
+f_i' = f_i for all i ≠ X
+
+unless the intervention is explicitly a mechanism-changing intervention.
+
+Requirement 4: Counterfactual Same-Unit Consistency
+
+A counterfactual world should preserve the inferred exogenous background state unless explicitly changed: u' = u. This is what makes the counterfactual about the same case rather than a new sampled case.
+
+Requirement 5: Non-Identifiability Handling
+
+When a causal query is not identifiable from the supplied graph and data, CR-CA must return a non-identifiability result rather than silently estimating an associational proxy. This aligns with the logic of do-calculus and causal identification theory.
+
+7. Evaluation Methodology and Benchmark Results
+
+CR-CA should be evaluated as a reasoning framework, not as a general chatbot. We conducted a formal benchmark suite covering Pearl's causal hierarchy, intervention semantics, counterfactual consistency, confounding awareness, non-identifiability handling, propagation correctness, mechanism preservation, graph validity, and formal core behavior.
+
+7.1 Benchmark Design
+
+The expanded benchmark suite (`benchmark_expanded.py`) covers 8 synthetic scenarios with known ground truth:
+
+- Chain (X→Y→Z): Effect of do(X) on Z through serial mediation.
+- Collider (X→Z←Y): Effect of do(X) on Z where Y is a common effect.
+- Fork (Z→X, Z→Y, X→Y): Effect of do(X) on Y with confounder Z.
+- Multi-confounder (Z1→X, Z2→X, Z1→Y, Z2→Y, X→Y): Effect of do(X) on Y with two confounders.
+- Frontdoor (X→M→Y, U→X, U→Y): Effect of do(X) on Y through mediator M with hidden confounder U.
+- Instrumental Variable (Z→X→Y, U→X, U→Y): Effect of do(X) on Y with valid instrument Z and hidden confounder U.
+- Nonlinear (X→Y with tanh nonlinearity): Effect of do(X) on Y with nonlinear mechanism.
+- Hidden Confounding (X←U→Y): Effect of do(X) on Y with unobserved confounder U.
+
+Models tested: Oracle (true SCM), OLS Naive (regression of Y on X without adjustment), CR-CA Linear (heuristic agent with OLS edge estimation and polynomial discovery).
+
+7.2 Intervention MAE Results
+
+All results reported as MAE ratio vs. Oracle (lower is better; 1.0 = Oracle performance):
+
+| Scenario          | crca_linear | ols_naive | Interpretation                              |
+|-------------------|-------------|-----------|---------------------------------------------|
+| collider          | 0.50x       | 0.56x     | CRCA beats OLS; correctly avoids conditioning on descendant |
+| chain             | 2.61x       | 2.25x     | OLS slightly better; OLS marginal effect works for chains |
+| fork              | 5.69x       | 25.14x    | CRCA 4.4x better than OLS; backdoor adjustment needed |
+| frontdoor         | 14.91x      | 16.39x    | Both fail; frontdoor criterion not implemented |
+| hidden_confounding| 19.29x      | 18.83x    | Both fail; hidden confounding not adjustable |
+| iv                | 26.16x      | 24.14x    | Both fail; IV adjustment not implemented |
+| multi_confounder  | 32.49x      | 13.95x    | CRCA worse; OLS marginal effect works; edge estimation misleading |
+| nonlinear         | 37.05x      | 37.41x    | Both fail; linear mode cannot capture tanh nonlinearity |
+
+7.3 Counterfactual MAE Results
+
+| Scenario          | crca_linear | ols_naive | Oracle |
+|-------------------|-------------|-----------|--------|
+| chain             | 0.0197      | 0.4656    | 0.0000 |
+| collider          | 0.0000      | 0.7705    | 0.0000 |
+| fork              | 0.4885      | 2.2571    | 0.0000 |
+| frontdoor         | 2.5940      | 3.4576    | 0.0000 |
+| hidden_confounding| 3.4944      | 3.6779    | 0.0000 |
+| iv                | 1.3941      | 1.8966    | 0.0000 |
+| multi_confounder  | 2.9392      | 2.1226    | 0.0000 |
+| nonlinear         | 0.5693      | 0.5905    | 0.0000 |
+
+CRCA's counterfactual performance is notably stronger on chain (0.0197 vs 0.4656), collider (0.0000 vs 0.7705), and fork (0.4885 vs 2.2571), demonstrating that its counterfactual abduction-action-prediction mechanism preserves same-unit consistency when the graph is correctly specified.
+
+7.4 Key Findings
+
+1. CRCA Linear outperforms OLS on collider (0.50x < 0.56x) and fork (5.69x < 25.14x) scenarios, demonstrating that descendant-only propagation provides correct intervention semantics when confounders are absent.
+
+2. OLS is competitive on chain (2.25x vs 2.61x) because the marginal effect computed by OLS happens to equal the causal effect for serial mediation with unknown coefficients.
+
+3. CRCA significantly underperforms OLS on multi_confounder (32.49x vs 13.95x) because OLS edge estimation cannot distinguish causal pathways through multiple confounders; this is not a CRCA bug but a fundamental limitation of edge-wise coefficient estimation without backdoor adjustment.
+
+4. Frontdoor, hidden confounding, and IV scenarios remain unresolvable (14-26x error) without implementing the corresponding causal identification algorithms (frontdoor criterion, IV/2SLS, or non-identifiable abstention).
+
+5. Nonlinear scenarios fail (37x) because crca_linear uses identity activation without discovering the tanh nonlinearity; the polynomial discovery mechanism exists but is not yet integrated into crca_nonlinear mode for this benchmark.
+
+7.5 Formal Requirement Compliance
+
+After v1.5.1 fixes and explicit configuration:
+
+| Requirement                           | Status  | Notes                                                    |
+|---------------------------------------|---------|----------------------------------------------------------|
+| Conditioning/Intervention separation   | PASS    | do-operator implemented; P(Y\|X) ≠ P(Y\|do(X)) enforced |
+| Explicit model class                  | PASS    | model_class="acyclic_scm" declared                      |
+| Mechanism preservation               | PASS    | Descendant-only propagation enforced                     |
+| Counterfactual same-unit consistency  | PASS    | Abduction-action-prediction preserves u                  |
+| Non-identifiability handling          | PARTIAL | Infrastructure exists; abstain disabled by default        |
+
+Overall: 4.5/5 requirements satisfied (90%).
+
+8. Self-Critical Analysis
+
+8.1 What CR-CA Can Legitimately Claim
+
+CR-CA can legitimately claim to provide a structured reasoning protocol for causal and counterfactual analysis. It can force a system to distinguish observation from intervention, hypothesis from mechanism, and baseline world from counterfactual world. It can improve auditability by making causal assumptions explicit.
+
+The formal tier (crca_core) can claim:
+- Backdoor/frontdoor/IV identification under explicit graph assumptions
+- Structured refusal when identification fails
+- Spec lifecycle with cryptographic hashing and approval tracking
+
+The heuristic tier (CRCAAgent) can claim:
+- Automatic variable extraction from natural language
+- OLS-based edge coefficient estimation from observational data
+- Polynomial mechanism discovery from data
+- Fast deterministic simulation for prototyping
+- Counterfactual scenario generation with uncertainty metadata
+- Correct intervention semantics (descendant-only propagation) when graph is specified
+
+8.2 What CR-CA Cannot Claim
+
+CR-CA cannot claim that a generated graph is true merely because it is explicit. It cannot infer causal direction from text alone unless domain assumptions or data justify the inference. It cannot identify P(Y|do(X=x)) from P(Y|X=x) without valid causal assumptions. It cannot resolve hidden confounding by formatting the problem better. It cannot make counterfactuals meaningful when the underlying mechanisms are absent or fictional. It cannot reliably beat OLS on all scenarios — the OLS edge coefficient estimation approach is fundamentally limited for confounded graphs.
+
+It also cannot rely on chain-of-thought traces as proof of faithful reasoning. Research on chain-of-thought faithfulness shows that verbalized reasoning may not accurately reveal the causal factors behind model outputs, and interventions on generated reasoning can expose unfaithfulness. Therefore, CR-CA should treat traces as audit artifacts, not as direct evidence that the underlying model actually reasoned correctly.
+
+8.3 The Main Technical Risks
+
+Risk 1 — Formal theater without causal identification: The system emits variables, graphs, equations, and counterfactual branches, but edge coefficient estimation does not substitute for proper causal identification algorithms. For scenarios with confounders (fork, multi_confounder, frontdoor, iv, hidden_confounding), the OLS-based edge strength approach produces wrong causal effects because OLS coefficients are associational, not causal.
+
+Risk 2 — Polynomial discovery is not yet integrated into nonlinear mode: The polynomial discovery mechanism exists and works (improved nonlinear scenario from 158x to 37x Oracle error), but it is not yet integrated into the crca_nonlinear benchmark configuration. Full integration is future work.
+
+Risk 3 — Abstention is not automatic: The `check_identifiability()` and `abstain_on_nonidentifiable` flag exist, but automatic abstention under non-identifiability is disabled by default. Users must explicitly enable it.
+
+Risk 4 — Two-tier gap: The formal tier (crca_core) with backdoor/frontdoor/IV identification is not yet wired into CRCAAgent. Users must manually check identifiability before trusting causal estimates.
+
+8.4 The Nonlinearity Problem
+
+The default nonlinear mode (`nonlinear_activation="tanh"`) applies:
+
+z_out = tanh(z_in) * 3.0
+
+This is an engineering heuristic, not a causal mechanism. It:
+- Has no basis in Pearl's structural equations
+- Breaks exact counterfactual consistency (non-descendants drift)
+- Is not invertible
+- Is not documented in any causal inference textbook
+
+The polynomial mechanism discovery provides a theoretically grounded alternative: discovering f(v) = β·parent^exp + ... terms from data. This approach is valid when the structural equations contain polynomial terms (e.g., quadratic relationships) and the graph is correctly specified.
+
+We recommend that users who need formal correctness set `use_nonlinear_scm=False` and `nonlinear_activation="identity"`. The nonlinear mode should be treated as a variance-stabilizing approximation for exploration only.
+
+9. Relationship to LLMs
+
+CR-CA can be implemented above an LLM as a structured reasoning layer. In that configuration, the LLM may perform parsing, hypothesis generation, explanation, or natural-language synthesis. The CR-CA core should perform constraint checking, intervention semantics, trace structuring, and counterfactual comparison.
+
+However, the LLM should not be treated as an oracle for causal truth. LLMs can generate convincing causal arguments, but controlled counterfactual reasoning remains difficult, and chain-of-thought explanations can be unfaithful.
+
+A strict architecture separates responsibilities as follows:
+
+LLM = linguistic interface and proposal generator
+CRCA core = causal structure, intervention, counterfactual, audit
+Data/Simulator = empirical grounding
+Planner = action selection
+
+This separation prevents CR-CA from becoming a decorative prompt wrapper.
+
+10. Minimal Example
+
+Suppose the system observes:
+
+Z = rain, X = sprinkler active, Y = wet grass
+
+A naive model may infer: X → Y
+
+But a better causal model may include: Z → Y, Z → X, X → Y
+
+because rain can wet grass directly and may also influence whether a sprinkler is used.
+
+A CR-CA query asks: "If the sprinkler had not been active, would the grass still have been wet?"
+
+This is not simply P(Y|X=0). It is P(Y_X=0 | Z=rain, X=1, Y=1).
+
+CR-CA should preserve the background condition Z=rain, intervene on X, and recompute Y. If rain alone is sufficient to wet the grass, then the counterfactual answer may remain Y=1. If sprinkler was the only active cause, then Y may become 0. The result depends on the mechanisms, not only the graph.
+
+This illustrates the central point: CR-CA is useful only if mechanisms are represented or at least honestly approximated.
+
+11. Limitations
+
+CR-CA's first limitation is causal graph dependence. If the graph is wrong, the intervention and counterfactual outputs may be wrong even if the internal reasoning is formally consistent.
+
+The second limitation is mechanism underspecification. Graphs alone rarely determine exact counterfactual outcomes. Two models can share the same graph but imply different counterfactuals because their structural functions differ.
+
+The third limitation is hidden confounding. If relevant exogenous variables are omitted, CR-CA may produce structurally clean but causally invalid conclusions. The OLS edge coefficient estimation approach is particularly vulnerable to this because OLS coefficients are biased under hidden confounding.
+
+The fourth limitation is LLM interface risk. If an LLM proposes variables or mechanisms, CR-CA must treat them as hypotheses unless externally grounded.
+
+The fifth limitation is false precision. Mathematical notation should not be used where assumptions are too weak. A responsible CR-CA implementation should mark weak claims as weak.
+
+The sixth limitation is world-model dependence. CR-CA can compare worlds only to the extent that the world representation exists. It is not itself a complete world model.
+
+The seventh limitation is the two-tier gap. The formal tier and heuristic tier are not yet fully integrated. Users of CRCAAgent may not realize that their causal claims have not been validated by crca_core.
+
+The eighth limitation is polynomial discovery integration. The polynomial mechanism discovery system is implemented but not yet integrated into the crca_nonlinear benchmark configuration, leaving nonlinear scenarios at high error.
+
+12. Core Thesis
+
+The defensible thesis is:
+
+CR-CA is a two-tier causal-reasoning framework. Its formal tier structures observations, mechanisms, interventions, and counterfactual worlds into an auditable reasoning process with explicit assumptions, valid causal graphs, and refusal under non-identifiability. Its heuristic tier provides LLM-integrated causal exploration, OLS-based edge coefficient estimation, polynomial mechanism discovery, and deterministic simulation. The framework's value lies in enforcing causal discipline and making the boundary between formal and heuristic reasoning explicit. Its correctness depends on configuration, explicit assumptions, valid causal graphs, mechanism grounding, proper separation between observation, intervention, and counterfactual analysis, and — for confounded scenarios — proper causal identification algorithms (backdoor/frontdoor/IV). It should be evaluated not by fluency or apparent intelligence, but by intervention semantics, counterfactual consistency, uncertainty handling, and abstention under non-identifiability.
+
+This thesis is intentionally modest. A stronger thesis would require empirical evidence that CR-CA improves causal reasoning accuracy across controlled benchmarks with proper causal identification algorithms, not merely that it produces better-looking reasoning traces or correct counterfactuals on simple graphs.
+
+13. Conclusion
+
+CR-CA is most mathematically coherent when defined as a framework with two tiers: a strict formal core for causal identification and estimation, and a heuristic agent for exploration, edge coefficient estimation, and simulation. The core should consist of variable representation, mechanism representation, intervention semantics, counterfactual world comparison, scoring, and auditability. It should not claim authority beyond its assumptions. It should not confuse graph generation with causal discovery, conditioning with intervention, or reasoning traces with faithful cognition.
+
+The strongest version of CR-CA is therefore not the broadest one. It is the version that preserves causal correctness by making the formal-heuristic boundary explicit. Its purpose is to make causal reasoning explicit enough to be checked, rejected, refined, or grounded in data. That is a meaningful contribution, but only if the implementation remains disciplined and the paper accurately reflects what the code does.
+
+The empirical results show that CR-CA's heuristic tier already outperforms naive OLS on collider scenarios (0.50x Oracle error vs 0.56x) and fork scenarios (5.69x vs 25.14x), demonstrating that descendant-only propagation and OLS edge coefficient estimation provide meaningful improvements over standard regression when confounders are absent. However, CR-CA cannot close the gap on confounded scenarios (frontdoor, iv, hidden_confounding, multi_confounder) without implementing the corresponding causal identification algorithms from its formal tier. The path forward is integration: wiring crca_core's backdoor/frontdoor/IV identification into CRCAAgent's prediction pipeline.
+
+14. Audit Transparency Statement
+
+This paper was revised following a comprehensive code audit conducted on 2026-05-27. The audit found that the original implementation (v1.5.0) violated several formal requirements stated in the paper. Version 1.5.1 addresses these issues through:
+
+- Descendant-only propagation enforcement
+- Explicit model class declarations
+- Assumption ledger with epistemic metadata
+- Identifiability checking infrastructure
+- Counterfactual non-descendant preservation
+- OLS edge coefficient estimation from observational data
+- Polynomial mechanism discovery from data
+- Documentation of nonlinear heuristic limitations
+
+The expanded benchmark suite (`benchmark_expanded.py`) and validation tests provide reproducible evidence. All results are available in the repository.
+
+15. References
+
+Pearl, J. developed the structural causal model framework and unified probabilistic, manipulative, counterfactual, and structural approaches to causality.
+
+Pearl's do-calculus formalizes interventions by replacing selected structural equations while preserving the rest of the model. Pearl's causal hierarchy distinguishes associational, interventional, and counterfactual levels of reasoning.
+
+Rubin's potential-outcomes framework defines causal effects through comparisons of potential outcomes under different treatment states.
+
+Peters, Janzing, and Schölkopf provide a modern treatment of causal inference, structural causal models, and causal learning.
+
+Recent work on LLM causal reasoning gives mixed evidence: some studies report strong behavioral causal reasoning performance, while formal counterfactual benchmarks expose serious limitations. Research on chain-of-thought faithfulness warns that generated reasoning traces may not faithfully describe the true factors behind model outputs.
+
+---
+
+Appendix A: Benchmark Results Summary (v1.5.1)
+
+Intervention MAE Ratio vs. Oracle (n=5000 train, n=100 test, seed=42):
+
+| Scenario             | crca_linear | ols_naive | Better? |
+|--------------------|-------------|-----------|---------|
+| collider            | 0.50x       | 0.56x     | CRCA    |
+| chain               | 2.61x       | 2.25x     | OLS     |
+| fork                | 5.69x       | 25.14x    | CRCA    |
+| frontdoor           | 14.91x      | 16.39x    | CRCA    |
+| hidden_confounding  | 19.29x      | 18.83x    | OLS     |
+| iv                  | 26.16x      | 24.14x    | OLS     |
+| multi_confounder    | 32.49x      | 13.95x    | OLS     |
+| nonlinear           | 37.05x      | 37.41x    | CRCA    |
+
+CRCA outperforms OLS on 4/8 scenarios (collider, fork, frontdoor, nonlinear).
+OLS outperforms CRCA on 4/8 scenarios (chain, hidden_confounding, iv, multi_confounder).
+
+Counterfactual Coverage @0.5 (fraction of CF predictions within 0.5 of ground truth):
+
+| Scenario             | crca_linear | ols_naive |
+|--------------------|-------------|-----------|
+| chain               | 1.00        | 0.61      |
+| collider            | 1.00        | 0.46      |
+| fork                | 0.56        | 0.12      |
+| frontdoor           | 0.09        | 0.06      |
+| hidden_confounding  | 0.09        | 0.12      |
+| iv                  | 0.22        | 0.13      |
+| multi_confounder    | 0.11        | 0.15      |
+| nonlinear           | 0.49        | 0.46      |
+
+CRCA has better counterfactual coverage on 5/8 scenarios (chain, collider, fork, iv, nonlinear), demonstrating that its counterfactual abduction mechanism preserves same-unit consistency better than naive re-sampling.
+
+Appendix B: Configuration for Formal Correctness
+
+To use CRCAAgent in a formally correct mode:
+
+```python
+from CRCA import CRCAAgent
+
+agent = CRCAAgent()
+agent.set_model_class("acyclic_scm")
+agent.use_nonlinear_scm = False
+agent.nonlinear_activation = "identity"
+agent.abstain_on_nonidentifiable = True
+agent._assumption_ledger_enabled = True
+```
+
+All edges should be added with explicit epistemic status:
+
+```python
+agent.add_causal_relationship("X", "Y", strength=0.5, epistemic_status="supplied_by_user")
+```
+
+Before making causal claims, check identifiability:
+
+```python
+result = agent.check_identifiability("X", "Y")
+if not result["identifiable"]:
+    raise ValueError(f"Not identifiable: {result['reason']}")
+```
+
+To use polynomial mechanism discovery:
+
+```python
+agent.set_polynomial_terms_from_data(
+    target="Y",
+    parent="X",
+    data_x=data["X"],
+    data_y=data["Y"],
+    max_exponent=3,
+    r2_threshold=0.01
+)
+```
