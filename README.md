@@ -3945,7 +3945,9 @@ CR-CA can be used for:
 
 ### Benchmark Results (v2.0.0)
 
-The expanded benchmark suite (`benchmark_expanded.py`) evaluates CRCA against Oracle (true SCM) and OLS Naive on 8 synthetic scenarios:
+The expanded benchmark suite (`benchmark_expanded.py`) evaluates CRCA against Oracle (true SCM) and OLS Naive on 8 synthetic scenarios. Results are MAE ratios vs Oracle (lower is better; 1.0 = Oracle):
+
+#### Intervention MAE Ratio vs Oracle
 
 | Scenario | CRCA Linear | OLS Naive | Notes |
 |----------|-----------|-----------|-------|
@@ -3956,9 +3958,60 @@ The expanded benchmark suite (`benchmark_expanded.py`) evaluates CRCA against Or
 | hidden_confounding | 19.29x | **18.83x** | Needs backdoor adjustment or abstention |
 | iv | 26.16x | **24.14x** | Needs IV/2SLS (crca_core) |
 | multi_confounder | 32.49x | **13.95x** | OLS edge estimation misleading with confounders |
-| nonlinear | 37.05x | 37.41x | Polynomial discovery not yet in nonlinear mode |
+| nonlinear | 37.05x | 37.41x | Polynomial discovery not yet integrated in nonlinear mode |
 
-CRCA outperforms OLS on 4/8 scenarios. The remaining gaps require integrating crca_core's backdoor/frontdoor/IV identification algorithms into CRCAAgent's prediction pipeline.
+#### Counterfactual Coverage @0.5
+
+| Scenario | CRCA Linear | OLS Naive |
+|----------|-----------|-----------|
+| chain | **1.00** | 0.61 |
+| collider | **1.00** | 0.46 |
+| fork | **0.56** | 0.12 |
+| frontdoor | 0.09 | 0.06 |
+| hidden_confounding | 0.09 | **0.12** |
+| iv | **0.22** | 0.13 |
+| multi_confounder | 0.11 | **0.15** |
+| nonlinear | **0.49** | 0.46 |
+
+**Summary:** CRCA outperforms OLS on 4/8 intervention scenarios and 5/8 counterfactual coverage scenarios. Remaining gaps (frontdoor, iv, hidden_confounding, multi_confounder) require integrating crca_core's backdoor/frontdoor/IV identification algorithms into CRCAAgent's prediction pipeline.
+
+### Audit Report
+
+This section documents findings from a comprehensive code audit conducted on 2026-05-27.
+
+#### Pre-Audit State (v1.5.0)
+
+The original implementation violated 4 of 5 formal correctness requirements:
+
+| Requirement | Status |
+|-------------|--------|
+| Conditioning/Intervention separation | Violated (propagation bug) |
+| Explicit model class | Missing |
+| Mechanism preservation | FAILED |
+| Counterfactual same-unit consistency | FAILED |
+| Non-identifiability handling | FAILED |
+
+#### Post-Audit State (v1.5.1)
+
+After fixes, CRCAAgent satisfies 4.5/5 formal requirements when configured correctly:
+
+| Requirement | Status |
+|-------------|--------|
+| Conditioning/Intervention separation | PASS |
+| Explicit model class | PASS |
+| Mechanism preservation | PASS |
+| Counterfactual same-unit consistency | PASS |
+| Non-identifiability handling | PARTIAL (flag exists but disabled by default) |
+
+#### Key Findings
+
+1. **Two-System Problem**: The repository contains two causally distinct implementations — `CRCAAgent` (heuristic) and `crca_core` (formal). The paper conflated them.
+
+2. **OLS Edge Estimation**: Learning edge coefficients from data via OLS works for correctly-specified graphs without confounders. It fails under confounding because OLS coefficients are associational, not causal.
+
+3. **Polynomial Discovery**: The incremental R² thresholding approach correctly identifies polynomial terms but is not yet integrated into the nonlinear benchmark mode.
+
+4. **Remaining Gaps**: The formal tier (crca_core) with backdoor/frontdoor/IV identification is not wired into CRCAAgent. Users must manually check identifiability.
 
 ### Limitations
 
